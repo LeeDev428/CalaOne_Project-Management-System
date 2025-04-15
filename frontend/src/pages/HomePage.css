@@ -1,0 +1,151 @@
+.home {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 5%;
+  background: white;
+}
+
+.logo {
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.sign-in {
+  text-decoration: none;
+  color: #4299e1;
+  font-weight: 500;
+  font-size: 1.3rem;
+}
+
+.content-wrapper {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.hero-section {
+  text-align: center;
+  padding: 4rem 0;
+}
+
+.hero-section h1 {
+  font-size: 3.5rem;
+  color: #2d3748;
+  margin-bottom: 1rem;
+}
+
+.hero-subtitle {
+  font-size: 1.25rem;
+  color: #4a5568;
+  margin-bottom: 2rem;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.hero-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-bottom: 4rem;
+}
+
+.button {
+  padding: 0.75rem 2rem;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 500;
+  transition: transform 0.2s;
+}
+
+.button:hover {
+  transform: translateY(-2px);
+}
+
+.primary {
+  background: #4299e1;
+  color: white;
+}
+
+.secondary {
+  background: white;
+  color: #4299e1;
+  border: 1px solid #4299e1;
+}
+
+.features-section {
+  padding: 2rem 0;
+  margin-top: -50px; /* Move the entire features section up */
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+  margin-top: 2rem;
+  position: relative;
+  z-index: 1; /* Ensure cards appear above other content */
+}
+
+.feature-card {
+  background: white;
+  padding: 2rem;
+  border-radius: 12px;
+  text-align: center;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  cursor: pointer;
+  transform: translateY(0);
+  margin-top: -30px; /* Move individual cards up */
+}
+
+.feature-card:hover {
+  transform: translateY(-15px);
+  box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
+}
+
+.feature-icon {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+  display: inline-block;
+}
+
+.feature-card h3 {
+  color: #2d3748;
+  margin-bottom: 0.5rem;
+  font-size: 1.25rem;
+}
+
+.feature-card p {
+  color: #4a5568;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.footer {
+  text-align: center;
+  padding: 2rem;
+  background: #2d3748;
+  color: white;
+}
+
+@media (max-width: 768px) {
+  .features-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .hero-section h1 {
+    font-size: 2.5rem;
+  }
+  
+  .content-wrapper {
+    padding: 1rem;
+  }
+}
