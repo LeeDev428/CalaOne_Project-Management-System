@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import CreatePage from './pages/CreatePage'
 import ChatPage from './pages/ChatPage'
+import ProtectedRoute from './components/ProtectedRoute'
 
 function App() {
   return (
@@ -14,7 +15,14 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/create" element={<CreatePage />} />
-          <Route path="/chat" element={<ChatPage />} />
+          <Route 
+            path="/chat" 
+            element={
+              <ProtectedRoute>
+                <ChatPage />
+              </ProtectedRoute>
+            } 
+          />
         </Routes>
       </div>
     </Router>

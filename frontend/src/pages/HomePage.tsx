@@ -15,7 +15,7 @@ const HomePage = () => {
           <h1>Connect. Chat. Collaborate.</h1>
           <p className="hero-subtitle">Experience real-time communication with enhanced security and seamless integration.</p>
           <div className="hero-buttons">
-            <Link to="/register" className="button primary">Get Started</Link>
+            <Link to="/login" className="button primary">Get Started</Link>
             <Link to="/learn" className="button secondary">Learn More</Link>
           </div>
         </section>
