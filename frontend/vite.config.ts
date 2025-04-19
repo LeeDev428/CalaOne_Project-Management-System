@@ -12,5 +12,8 @@ export default defineConfig({
   server: {
     host: true, // Expose the server to the network
     port: 5173, // Default port
+    proxy: {
+      '/api': 'http://localhost:5000'
+    }
   },
 });

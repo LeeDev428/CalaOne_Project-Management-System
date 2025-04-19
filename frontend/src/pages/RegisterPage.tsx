@@ -14,6 +14,19 @@ import {
   useColorModeValue,
 } from '@chakra-ui/react';
 
+const register = async (formData: { name: string; email: string; password: string }) => {
+  const response = await fetch('http://localhost:5000/api/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(formData)
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'Registration failed');
+  }
+  return data;
+};
+
 const RegisterPage = () => {
   const navigate = useNavigate();
   const toast = useToast();

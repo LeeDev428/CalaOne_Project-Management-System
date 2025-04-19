@@ -11,13 +11,15 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@chakra-ui/icons": "^2.2.4",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.7",
+    "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "express-async-handler": "^1.2.0",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.13.2"
+    "mongoose": "^8.13.2",
+    "mongosh": "^2.5.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"
