@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -26,6 +26,9 @@ import {
   MenuItem,
 } from '@chakra-ui/react';
 import { HamburgerIcon } from '@chakra-ui/icons';
+import io from 'socket.io-client';
+
+const socketServerURL = 'http://localhost:5000'; // Make sure this matches your backend
 
 const ChatPage = () => {
   const navigate = useNavigate();
@@ -35,9 +38,24 @@ const ChatPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [messages, setMessages] = useState<{ senderId: string, receiverId?: string, content: string }[]>([]);
+  const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
+  const [isTyping, setIsTyping] = useState(false);
+  const typingTimeout = useRef<any>(null);
+  const socketRef = useRef<any>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   // Get current user from localStorage (assuming it's stored as JSON string)
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+  // Normalize _id for currentUser if needed
+  if (currentUser.id && !currentUser._id) {
+    currentUser._id = currentUser.id;
+  }
+
+  // Create a proxy URL for API calls
+  const createApiUrl = (endpoint: string) => {
+    return `http://localhost:5000${endpoint}`;
+  };
 
   const confirmLogout = () => {
     localStorage.removeItem('token');
@@ -47,7 +65,7 @@ const ChatPage = () => {
 
   useEffect(() => {
     setLoading(true);
-    fetch('/api/user/')
+    fetch(createApiUrl('/api/user/'))
       .then(res => {
         if (!res.ok) throw new Error('Network response was not ok');
         return res.json();
@@ -62,6 +80,209 @@ const ChatPage = () => {
         console.error('Failed to fetch users:', err);
       });
   }, []);
+
+  // Fetch messages when a user is selected
+  useEffect(() => {
+    if (!selectedUser || !currentUser._id) {
+      setMessages([]);
+      return;
+    }
+    console.log("Fetching messages between users:", 
+      { currentUser: currentUser._id, selectedUser: selectedUser._id });
+    fetch(createApiUrl(`/api/messages?user1=${currentUser._id}&user2=${selectedUser._id}`))
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`API error: ${res.status}`);
+        }
+        return res.json();
+      })
+      .then(data => {
+        console.log("Messages API response:", data);
+        if (!Array.isArray(data)) {
+          console.error("API didn't return an array:", data);
+          return;
+        }
+        // Store messages exactly as they come from the API
+        setMessages(data);
+      })
+      .catch(err => {
+        console.error("Error fetching messages:", err);
+      });
+  }, [selectedUser, currentUser._id]);
+
+  // Always up-to-date refs for socket event handlers
+  const selectedUserRef = useRef(selectedUser);
+  const currentUserRef = useRef(currentUser);
+  useEffect(() => {
+    selectedUserRef.current = selectedUser;
+    currentUserRef.current = currentUser;
+  }, [selectedUser, currentUser]);
+
+  // Only initialize socket ONCE
+  useEffect(() => {
+    socketRef.current = io(socketServerURL, {
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 5,
+    });
+
+    socketRef.current.on('connect', () => {
+      if (currentUser && currentUser._id) {
+        socketRef.current.emit('user_connected', currentUser._id);
+      }
+    });
+
+    socketRef.current.on('online_users', (onlineUserIds: string[]) => {
+      setOnlineUsers(onlineUserIds);
+    });
+
+    // Typing indicator: show if the OTHER user is typing to me in this convo
+    socketRef.current.on('typing', ({ from, to }) => {
+      if (
+        selectedUserRef.current &&
+        from === selectedUserRef.current._id &&
+        to === currentUserRef.current._id
+      ) {
+        setIsTyping(true);
+        if (typingTimeout.current) clearTimeout(typingTimeout.current);
+        typingTimeout.current = setTimeout(() => setIsTyping(false), 1500);
+      }
+    });
+
+    socketRef.current.on('stop_typing', ({ from, to }) => {
+      if (
+        selectedUserRef.current &&
+        from === selectedUserRef.current._id &&
+        to === currentUserRef.current._id
+      ) {
+        setIsTyping(false);
+      }
+    });
+
+    socketRef.current.on('receive_message', (msg) => {
+      const senderId = String(msg.senderId);
+      const receiverId = String(msg.receiverId);
+      const currentId = String(currentUser._id);
+      const selectedId = selectedUserRef.current ? String(selectedUserRef.current._id) : null;
+      const isForCurrentConversation =
+        selectedId &&
+        ((senderId === selectedId && receiverId === currentId) ||
+          (senderId === currentId && receiverId === selectedId));
+      if (isForCurrentConversation) {
+        setMessages(prev => {
+          if (prev.some(m => m._id === msg._id)) return prev;
+          return [...prev, msg];
+        });
+      }
+    });
+
+    return () => {
+      if (socketRef.current) socketRef.current.disconnect();
+    };
+    // eslint-disable-next-line
+  }, []);
+
+  // Handle sending messages
+  const handleSendMessage = async () => {
+    if (!message.trim() || !selectedUser) return;
+    
+    // Ensure we have valid IDs
+    if (!currentUser._id || !selectedUser._id) {
+      console.error("Missing user IDs:", { currentUser, selectedUser });
+      return;
+    }
+    // Get the proper user ID (some APIs return id, others return _id)
+    const currentUserId = currentUser._id || currentUser.id;
+    console.log("Sending message:", {
+      from: currentUserId,
+      to: selectedUser._id,
+      content: message.trim(),
+    });
+    const msgObj = {
+      senderId: currentUser._id,
+      receiverId: selectedUser._id,
+      content: message.trim(),
+    };
+    // Always use REST API to ensure consistency
+    try {
+      console.log("Sending message via REST API:", msgObj);
+      const response = await fetch(createApiUrl('/api/messages'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(msgObj),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`API error: ${response.status}, ${JSON.stringify(errorData)}`);
+      }
+      const sentMessage = await response.json();
+      console.log("Message sent, API response:", sentMessage);
+      // Socket handling will be for real-time updates from other clients
+      if (socketRef.current && socketRef.current.connected) {
+        socketRef.current.emit('send_message', sentMessage);
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
+      alert("Failed to send message. See console for details.");
+    }
+    setMessage('');
+    if (socketRef.current && selectedUser) {
+      socketRef.current.emit('stop_typing', { from: currentUser._id, to: selectedUser._id });
+    }
+  };
+
+  // Add this to debug rendering
+  console.log("Current state:", {
+    selectedUser: selectedUser?._id,
+    currentUser: currentUser._id,
+    messageCount: messages.length,
+    socketConnected: socketRef.current?.connected
+  });
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, selectedUser]);
+
+  // Typing indicator logic (emit only if user is typing to someone else)
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setMessage(e.target.value);
+    if (
+      socketRef.current &&
+      selectedUser &&
+      currentUser._id &&
+      e.target.value.trim() !== ""
+    ) {
+      socketRef.current.emit('typing', { from: currentUser._id, to: selectedUser._id });
+      if (typingTimeout.current) clearTimeout(typingTimeout.current);
+      typingTimeout.current = setTimeout(() => {
+        socketRef.current.emit('stop_typing', { from: currentUser._id, to: selectedUser._id });
+      }, 1000);
+    } else if (
+      socketRef.current &&
+      selectedUser &&
+      currentUser._id &&
+      e.target.value.trim() === ""
+    ) {
+      socketRef.current.emit('stop_typing', { from: currentUser._id, to: selectedUser._id });
+    }
+  };
+
+  // Clear typing indicator when switching users
+  useEffect(() => {
+    setIsTyping(false);
+    if (
+      socketRef.current &&
+      selectedUser &&
+      currentUser._id
+    ) {
+      socketRef.current.emit('stop_typing', { from: currentUser._id, to: selectedUser._id });
+    }
+    // eslint-disable-next-line
+  }, [selectedUser]);
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -112,6 +333,9 @@ const ChatPage = () => {
                     <Box>
                       <Text fontWeight="bold" fontSize="16px">{user.name}</Text>
                       <Text fontSize="14px" color="gray.600">{user.email}</Text>
+                      <Text fontSize="12px" color={onlineUsers.includes(user._id) ? "green.500" : "gray.400"}>
+                        {onlineUsers.includes(user._id) ? "Online" : "Offline"}
+                      </Text>
                     </Box>
                   </HStack>
                 </Box>
@@ -119,14 +343,15 @@ const ChatPage = () => {
           </VStack>
         </VStack>
       </Box>
-
       <Flex flex={1} direction="column" bg={bgColor}>
         <HStack justify="space-between" p={5} borderBottom="1px" borderColor={borderColor} boxShadow="sm">
           {selectedUser ? (
             <HStack>
               <Avatar size="sm" name={selectedUser.name} src={selectedUser.profilePic} />
               <Text fontWeight="bold" fontSize="18px">{selectedUser.name}</Text>
-              <Text color="green.500" fontSize="14px">Online</Text>
+              <Text fontSize="14px" color={onlineUsers.includes(selectedUser._id) ? "green.500" : "gray.400"}>
+                {onlineUsers.includes(selectedUser._id) ? "Online" : "Offline"}
+              </Text>
             </HStack>
           ) : (
             <Text fontWeight="bold" fontSize="18px" color="gray.500">
@@ -146,20 +371,62 @@ const ChatPage = () => {
             </MenuList>
           </Menu>
         </HStack>
-
         <VStack flex={1} p={5} spacing={4} overflowY="auto" align="stretch">
           {selectedUser ? (
-            <Box alignSelf="center" color="gray.400" fontSize="lg" mt={10}>
-              {/* Placeholder for conversation with selectedUser */}
-              Start a conversation with <b>{selectedUser.name}</b>.
-            </Box>
+            messages.length === 0 ? (
+              <Box alignSelf="center" color="gray.400" fontSize="lg" mt={10}>
+                Start a conversation with <b>{selectedUser.name}</b>.
+              </Box>
+            ) : (
+              <>
+                {messages.map((msg, idx) => {
+                  // ...existing code for message rendering...
+                  const isSender = String(msg.senderId) === String(currentUser._id || currentUser.id);
+                  let displayTime = '';
+                  let dateObj: Date;
+                  if (msg.createdAt) {
+                    dateObj = new Date(msg.createdAt);
+                  } else {
+                    dateObj = new Date();
+                  }
+                  displayTime = isNaN(dateObj.getTime())
+                    ? ''
+                    : dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                  return (
+                    <Box
+                      key={msg._id || idx}
+                      alignSelf={isSender ? "flex-end" : "flex-start"}
+                      bg={isSender ? "blue.400" : "gray.200"}
+                      color={isSender ? "white" : "black"}
+                      px={4}
+                      py={2}
+                      borderRadius="lg"
+                      maxW="70%"
+                      mb={2}
+                    >
+                      <Text>{msg.content}</Text>
+                      <Text fontSize="xs" color={isSender ? "whiteAlpha.700" : "gray.500"} textAlign="right">
+                        {displayTime}
+                      </Text>
+                    </Box>
+                  );
+                })}
+                {/* Typing indicator */}
+                {isTyping && (
+                  <Box alignSelf="flex-start" color="gray.500" fontSize="sm" mt={-3}>
+                    {selectedUser.name} is typing...
+                  </Box>
+                )}
+                {/* Scroll anchor */}
+                <div ref={messagesEndRef} />
+              </>
+            )
           ) : (
             <Box alignSelf="center" color="gray.400" fontSize="lg" mt={10}>
               No conversation selected.
             </Box>
           )}
         </VStack>
-
         <HStack p={5} borderTop="1px" borderColor={borderColor} bg={bgColor} boxShadow="0 -2px 10px rgba(0,0,0,0.05)">
           <Input
             placeholder={selectedUser ? "Type a message..." : "Select a user to start chatting..."}
@@ -167,21 +434,24 @@ const ChatPage = () => {
             fontSize="15px"
             borderRadius="lg"
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={handleInputChange}
             isDisabled={!selectedUser}
+            onKeyDown={e => {
+              if (e.key === 'Enter') handleSendMessage();
+            }}
           />
           <Button 
             colorScheme="blue" 
             size="lg"
             fontSize="15px"
             px={8}
-            isDisabled={!selectedUser}
+            isDisabled={!selectedUser || !message.trim()}
+            onClick={handleSendMessage}
           >
             Send
           </Button>
-        </HStack>
+        </HStack> 
       </Flex>
-
       <Modal isOpen={isOpen} onClose={onClose} isCentered>
         <ModalOverlay backdropFilter="blur(2px)" />
         <ModalContent p={2}>
@@ -192,7 +462,7 @@ const ChatPage = () => {
           <ModalFooter>
             <Button 
               colorScheme="red" 
-              mr={3} 
+              mr={3}
               onClick={confirmLogout}
               fontSize="15px"
             >
